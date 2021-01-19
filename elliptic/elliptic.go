@@ -43,15 +43,67 @@ func (curve *CurveParams) Params() *CurveParams {
 
 func (curve *CurveParams) IsOnCurve(x, y *big.Int) bool {
 	// y^2 = x^3 + a*x + b
-	panic("not implemented")
+	y2 := new(big.Int).Mul(y, y)
+	y2.Mod(y2, curve.P)
+
+	x3 := new(big.Int).Mul(x, x)
+	x3.Mul(x3, x)
+	ax := new(big.Int).Mul(x, curve.Params().A)
+	x3.Add(x3, ax)
+	x3.Add(x3, curve.Params().B)
+	x3.Mod(x3, curve.Params().P)
+
+	if x3.Cmp(y2) == 0 {
+		return true
+	}
 	return false
 }
 
 // Add takes two points (x1, y1) and (x2, y2) and returns their sum.
 // It is assumed that "point at infinity" is (0, 0).
 func (curve *CurveParams) Add(x1, y1, x2, y2 *big.Int) (x, y *big.Int) {
-	panic("not implemented")
-	return nil, nil
+	if x1.Sign() == 0 && y1.Sign() == 0 {
+		return x2, y2
+	}
+	if x2.Sign() == 0 && y2.Sign() == 0 {
+		return x1, y1
+	}
+
+	ix, iy := Inverse(curve, x1, y1)
+	if x2.Cmp(ix) == 0 && y2.Cmp(iy) == 0 {
+		return big.NewInt(0), big.NewInt(0)
+	}
+
+	lambda := new(big.Int)
+
+	if x1.Cmp(x2) == 0 && y1.Cmp(y2) == 0 {
+		// lambda = (3*x1^2 + a) / 2*y1
+		dividend := new(big.Int).Mul(x1, x1)
+		dividend.Mul(dividend, big.NewInt(3))
+		dividend.Add(dividend, curve.A)
+		divider := new(big.Int).Mul(big.NewInt(2), y2)
+		divider.ModInverse(divider, curve.P)
+		lambda.Mod(dividend.Mul(dividend, divider), curve.P)
+
+	} else {
+		// lambda = (y2 - y1) / (x2 - x1)
+		dividend := new(big.Int).Sub(y2, y1)
+		divider := new(big.Int).Sub(x2, x1)
+		divider.ModInverse(divider, curve.P)
+		lambda.Mod(dividend.Mul(dividend, divider), curve.P)
+	}
+
+	// x3 = lambda^2 - x1 - x2
+	x3 := new(big.Int).Mul(lambda, lambda)
+	x3.Sub(x3.Sub(x3, x1), x2)
+	x3.Mod(x3, curve.P)
+
+	// y3 = lambda*(x1 - x3) - y1
+	y3 := new(big.Int).Mul(lambda, new(big.Int).Sub(x1, x3))
+	y3.Sub(y3, y1)
+	y3.Mod(y3, curve.P)
+
+	return x3, y3
 }
 
 func (curve *CurveParams) Double(x1, y1 *big.Int) (x, y *big.Int) {
@@ -59,8 +111,20 @@ func (curve *CurveParams) Double(x1, y1 *big.Int) (x, y *big.Int) {
 }
 
 func (curve *CurveParams) ScalarMult(xIn, yIn *big.Int, k []byte) (x, y *big.Int) {
-	panic("not implemented")
-	return nil, nil
+	x, y = new(big.Int), new(big.Int)
+	if len(k) == 0 {
+		return
+	}
+	i := new(big.Int).SetBytes(k)
+
+	for i.Cmp(big.NewInt(0)) > 0 {
+		if i.Bytes()[len(i.Bytes())-1]&0x01 != 0 {
+			x, y = curve.Add(x, y, xIn, yIn)
+		}
+		xIn, yIn = curve.Double(xIn, yIn)
+		i.Rsh(i, 1)
+	}
+	return
 }
 
 func (curve *CurveParams) ScalarBaseMult(k []byte) (x, y *big.Int) {
@@ -257,7 +321,7 @@ func initP48() {
 	p48.P, _ = new(big.Int).SetString("146150163733117", 10)
 	p48.N, _ = new(big.Int).SetString("146150168402890", 10)
 	p48.B, _ = new(big.Int).SetString("1242422", 10)
-	p48.A, _ = new(big.Int).SetString("544333", 10 )
+	p48.A, _ = new(big.Int).SetString("544333", 10)
 	p48.Gx, _ = new(big.Int).SetString("27249639878388", 10)
 	p48.Gy, _ = new(big.Int).SetString("14987583413657", 10)
 	p48.BitSize = 48

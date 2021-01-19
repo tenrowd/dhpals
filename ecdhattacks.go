@@ -1,14 +1,92 @@
 package dhpals
 
 import (
+	"bytes"
+	"fmt"
 	"math/big"
 
 	"github.com/dnkolegov/dhpals/elliptic"
 	"github.com/dnkolegov/dhpals/x128"
 )
 
+func findPoint(r *big.Int, curve elliptic.Curve) (*big.Int, *big.Int, error) {
+	x, y := new(big.Int), new(big.Int)
+	order := new(big.Int).Div(curve.Params().N, r).Bytes()
+	i := new(big.Int).Set(Big1)
+
+	for ; i.Cmp(r) <= 0; i.Add(i, Big1) {
+		x, y = elliptic.GeneratePoint(curve)
+		x, y = curve.ScalarMult(x, y, order)
+		if x.Cmp(Big0) != 0 && y.Cmp(Big0) != 0 {
+			return x, y, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("Couldn't find a point with order %d on the curve %s", r, curve.Params().Name)
+}
+
+func bruteECDH(x, y, order *big.Int, h []byte, curve elliptic.Curve) (*big.Int, error) {
+	testx, testy := curve.ScalarMult(x, y, order.Bytes())
+	if testx.Cmp(Big0) != 0 && testy.Cmp(Big0) != 0 {
+		return nil, fmt.Errorf("There is no order %d for point on the curve %s", order, curve.Params().Name)
+	}
+	i := new(big.Int).Set(Big1)
+	var tempx, tempy *big.Int
+	for ; i.Cmp(order) <= 0; i.Add(i, Big1) {
+		tempx, tempy = curve.ScalarMult(x, y, i.Bytes())
+		k := append(tempx.Bytes(), tempy.Bytes()...)
+		temph := mixKey(k)
+		if bytes.Equal(temph, h) {
+			return i, nil
+		}
+	}
+	return nil, fmt.Errorf("Couldn't find appropriate value with brute force with order %d on the curve %s", order, curve.Params().Name)
+
+}
+
+func appendUnique(r, b []*big.Int, order, key *big.Int) ([]*big.Int, []*big.Int) {
+	for _, v := range r {
+		if v.Cmp(order) == 0 {
+			return r, b
+		}
+	}
+	r = append(r, order)
+	b = append(b, key)
+	return r, b
+
+}
+
 func runECDHInvalidCurveAttack(ecdh func(x, y *big.Int) []byte) (priv *big.Int) {
-	panic("not implemented")
+	curves := []elliptic.Curve{elliptic.P128(), elliptic.P128V1(), elliptic.P128V2(), elliptic.P128V3()}
+
+	var b, r []*big.Int
+
+	for _, curve := range curves {
+		j, err := findSmallOrders(curve.Params().N)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		for _, order := range j {
+			x, y, err := findPoint(order, curve)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			h := ecdh(x, y)
+
+			tb, err := bruteECDH(x, y, order, h, curve)
+			if err != nil {
+				fmt.Println(err)
+				return nil
+			}
+			r, b = appendUnique(r, b, order, tb)
+		}
+	}
+	priv, _, err := crt(b, r)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
 	return
 }
 
