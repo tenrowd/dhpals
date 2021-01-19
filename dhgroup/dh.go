@@ -2,6 +2,7 @@
 package dhgroup
 
 import (
+	"crypto/rand"
 	"fmt"
 	"io"
 	"math/big"
@@ -58,16 +59,23 @@ func (g *GroupParams) DHParams() *GroupParams {
 }
 
 func (g GroupParams) GenerateKey(rng io.Reader) (DHKey, error) {
-	panic("Not implemented")
+	privateKey, err := rand.Int(rng, g.Q)
+	if err != nil {
+		return DHKey{
+			Private: nil,
+			Public:  nil,
+		}, err
+	}
+	publicKey := new(big.Int).Exp(g.G, privateKey, g.P)
 	return DHKey{
-		Private: nil,
-		Public:  nil,
+		Private: privateKey,
+		Public:  publicKey,
 	}, nil
 }
 
 func (g GroupParams) DH(private, public *big.Int) (*big.Int, error) {
-	panic("not implemented")
-	return nil, nil
+	sessionKey := new(big.Int).Exp(public, private, g.P)
+	return sessionKey, nil
 }
 
 func (g GroupParams) DHLen() int {
