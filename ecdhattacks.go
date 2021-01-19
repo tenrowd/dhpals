@@ -55,6 +55,30 @@ func appendUnique(r, b []*big.Int, order, key *big.Int) ([]*big.Int, []*big.Int)
 
 }
 
+//from 57 Challenge
+func findSmallOrders(cofactor *big.Int) ([]*big.Int, error) {
+	var smallfactors []*big.Int
+	j := new(big.Int).Set(cofactor)
+	smallrange := new(big.Int).SetInt64(1 << 16)
+
+	for i := big.NewInt(2); i.Cmp(smallrange) < 0; i.Add(i, Big1) {
+		if divides(i, j) {
+			smallfactors = append(smallfactors, new(big.Int).Set(i))
+			for divides(i, j) {
+				j.Div(j, i)
+			}
+		}
+		if i.Cmp(j) >= 0 {
+			break
+		}
+	}
+
+	if len(smallfactors) == 0 {
+		return nil, fmt.Errorf("Couldn't find factors for %d", cofactor)
+	}
+	return smallfactors, nil
+}
+
 func runECDHInvalidCurveAttack(ecdh func(x, y *big.Int) []byte) (priv *big.Int) {
 	curves := []elliptic.Curve{elliptic.P128(), elliptic.P128V1(), elliptic.P128V2(), elliptic.P128V3()}
 
